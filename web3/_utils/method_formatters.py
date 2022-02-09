@@ -56,7 +56,7 @@ from web3._utils.encoding import (
 from web3._utils.filters import (
     BlockFilter,
     LogFilter,
-    TransactionFilter,
+    TransactionFilter, AsyncBlockFilter, AsyncTransactionFilter, AsyncLogFilter,
 )
 from web3._utils.formatters import (
     hex_to_integer,
@@ -689,15 +689,31 @@ NULL_RESULT_FORMATTERS: Dict[RPCEndpoint, Callable[..., Any]] = {
 }
 
 
+_FilterTypes = Union[
+    BlockFilter,
+    TransactionFilter,
+    LogFilter,
+    AsyncBlockFilter,
+    AsyncTransactionFilter,
+    AsyncLogFilter
+]
+
+
 def filter_wrapper(
     module: "Eth",
     method: RPCEndpoint,
     filter_id: HexStr,
-) -> Union[BlockFilter, TransactionFilter, LogFilter]:
-    if method == RPC.eth_newBlockFilter:
+) -> _FilterTypes:
+    if method == RPC.eth_newBlockFilter and module.is_async:
+        return AsyncBlockFilter(filter_id, eth_module=module)
+    elif method == RPC.eth_newBlockFilter:
         return BlockFilter(filter_id, eth_module=module)
+    elif method == RPC.eth_newPendingTransactionFilter and module.is_async:
+        return AsyncTransactionFilter(filter_id, eth_module=module)
     elif method == RPC.eth_newPendingTransactionFilter:
         return TransactionFilter(filter_id, eth_module=module)
+    elif method == RPC.eth_newFilter and module.is_async:
+        return AsyncLogFilter(filter_id, eth_module=module)
     elif method == RPC.eth_newFilter:
         return LogFilter(filter_id, eth_module=module)
     else:

@@ -528,6 +528,58 @@ class AsyncEth(BaseEth):
         return await self._call(transaction, block_identifier, state_override)
 
 
+    def filter_munger(
+        self,
+        filter_params: Optional[Union[str, FilterParams]] = None,
+        filter_id: Optional[HexStr] = None
+    ) -> Union[List[FilterParams], List[HexStr], List[str]]:
+        if filter_id and filter_params:
+            raise TypeError(
+                "Ambiguous invocation: provide either a `filter_params` or a `filter_id` argument. "
+                "Both were supplied."
+            )
+        if isinstance(filter_params, dict):
+            return [filter_params]
+        elif is_string(filter_params):
+            if filter_params in ['latest', 'pending']:
+                return [filter_params]
+            else:
+                raise ValueError(
+                    "The filter API only accepts the values of `pending` or "
+                    "`latest` for string based filters"
+                )
+        elif filter_id and not filter_params:
+            return [filter_id]
+        else:
+            raise TypeError("Must provide either filter_params as a string or "
+                            "a valid filter object, or a filter_id as a string "
+                            "or hex.")
+
+    _filter: Method[Callable[..., Any]] = Method(
+        method_choice_depends_on_args=select_filter_method(
+            if_new_block_filter=RPC.eth_newBlockFilter,
+            if_new_pending_transaction_filter=RPC.eth_newPendingTransactionFilter,
+            if_new_filter=RPC.eth_newFilter,
+        ),
+        mungers=[filter_munger],
+    )
+
+    async def filter(
+        self,
+        filter_params: Optional[Union[str, FilterParams]] = None,
+        filter_id: Optional[HexStr] = None
+    ) -> Any:
+        return await self._filter(filter_params, filter_id)
+
+    _get_filter_changes: Method[Callable[[HexStr], List[LogReceipt]]] = Method(
+        RPC.eth_getFilterChanges,
+        mungers=[default_root_munger]
+    )
+
+    async def get_filter_changes(self, filter_id: HexStr) -> List[LogReceipt]:
+        return await self._get_filter_changes(filter_id)
+
+
 class Eth(BaseEth):
     account = Account()
     defaultContractFactory: Type[Union[Contract, ConciseContract, ContractCaller]] = Contract  # noqa: E704,E501

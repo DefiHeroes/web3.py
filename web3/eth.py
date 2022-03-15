@@ -579,6 +579,14 @@ class AsyncEth(BaseEth):
     async def get_filter_changes(self, filter_id: HexStr) -> List[LogReceipt]:
         return await self._get_filter_changes(filter_id)
 
+    _uninstall_filter: Method[Callable[[HexStr], bool]] = Method(
+        RPC.eth_uninstallFilter,
+        mungers=[default_root_munger],
+    )
+
+    async def uninstall_filter(self, filter_id: HexStr) -> bool:
+        return await self._uninstall_filter(filter_id)
+
 
 class Eth(BaseEth):
     account = Account()

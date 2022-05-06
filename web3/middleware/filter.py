@@ -404,6 +404,8 @@ class AsyncRequestLogs:
         self._from_block = from_block
         self._to_block = to_block
 
+        self._initialised = False
+
     @property
     def filter_changes(self):
         return self._get_filter_changes()
@@ -425,17 +427,21 @@ class AsyncRequestLogs:
 
         return to_block
 
-    async def _init_block(self):
-        from_block = self.from_block
+    async def initialize(self):
+        """Converts"""
+        from_block = self._from_block
         if from_block is None or from_block == "latest":
             self._from_block = BlockNumber(await self.w3.eth.block_number + 1)
         elif is_string(from_block) and is_hex(from_block):
             self._from_block = BlockNumber(hex_to_integer(from_block))  # type: ignore
         else:
-            # cast b/c LatestBlockParam is handled above
             self._from_block = from_block
+        self._initialised = True
 
     async def _get_filter_changes(self) -> Iterator[List[LogReceipt]]:
+        if not self._initialised:
+            await self.initialize()
+
         async for start, stop in async_iter_latest_block_ranges(
             self.w3, self.from_block, await self.to_block
         ):
@@ -456,8 +462,11 @@ class AsyncRequestLogs:
                 yield list(concat(res))
 
     async def get_logs(self) -> List[LogReceipt]:
-        logs = await asyncio.gather(
-            async_get_logs_multipart(
+        if not self._initialised:
+            await self.initialize()
+        logs = [
+            r
+            async for r in async_get_logs_multipart(
                 self.w3,
                 self.from_block,
                 self.to_block,
@@ -465,7 +474,7 @@ class AsyncRequestLogs:
                 self.topics,
                 max_blocks=MAX_BLOCK_REQUEST,
             )
-        )
+        ]
         return logs
 
 
@@ -483,13 +492,37 @@ class RequestBlocks:
 
     @property
     def filter_changes(self) -> Iterator[List[Hash32]]:
-        return self.get_filter_changes()
+        return self._get_filter_changes()
 
-    def get_filter_changes(self) -> Iterator[List[Hash32]]:
+    def _get_filter_changes(self) -> Iterator[List[Hash32]]:
         block_range_iter = iter_latest_block_ranges(self.w3, self.start_block, None)
 
         for block_range in block_range_iter:
             yield block_hashes_in_range(self.w3, block_range)
+
+
+class AsyncRequestBlocks:
+    def __init__(self, w3: "Web3") -> None:
+        self.w3 = w3
+        self.start_block = None
+        self._initialized = False
+
+    @property
+    async def filter_changes(self) -> Iterator[List[Hash32]]:
+        return self._get_filter_changes()
+
+    async def initialize(self):
+        self.start_block = BlockNumber(await self.w3.eth.block_number + 1)
+        self._initialized = True
+
+    async def _get_filter_changes(self) -> Iterator[List[Hash32]]:
+        if not self._initialized:
+            await self.initialize()
+
+        block_range_iter = iter_latest_block_ranges(self.w3, self.start_block, None)
+
+        for block_range in block_range_iter:
+            yield await async_block_hashes_in_range(self.w3, block_range)
 
 
 @to_list
@@ -501,6 +534,17 @@ def block_hashes_in_range(
         return
     for block_number in range(from_block, to_block + 1):
         yield getattr(w3.eth.get_block(BlockNumber(block_number)), "hash", None)
+
+
+@to_list
+async def async_block_hashes_in_range(
+    w3: "Web3", block_range: Tuple[BlockNumber, BlockNumber]
+) -> Iterable[Hash32]:
+    from_block, to_block = block_range
+    if from_block is None or to_block is None:
+        return
+    for block_number in range(from_block, to_block + 1):
+        yield getattr(await w3.eth.get_block(BlockNumber(block_number)), "hash", None)
 
 
 def local_filter_middleware(
@@ -563,15 +607,12 @@ async def async_local_filter_middleware(
                 _filter = AsyncRequestLogs(
                     w3, **apply_key_map(FILTER_PARAMS_KEY_MAP, params[0])
                 )
-                await _filter._init_block()
-
             elif method == RPC.eth_newBlockFilter:
-                # TODO: Implement RequestBlocks
-                raise NotImplementedError
-                # _filter = RequestBlocks(w3)
+                _filter = AsyncRequestBlocks(w3)
             else:
                 raise NotImplementedError(method)
 
+            await _filter.initialize()
             filters[filter_id] = _filter
             return {"result": filter_id}
 

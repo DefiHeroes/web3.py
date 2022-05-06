@@ -36,6 +36,7 @@ from .exception_retry_request import (  # noqa: F401
     http_retry_request_middleware,
 )
 from .filter import (  # noqa: F401
+    async_local_filter_middleware,
     local_filter_middleware,
 )
 from .fixture import (  # noqa: F401

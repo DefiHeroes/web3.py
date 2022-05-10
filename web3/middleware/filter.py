@@ -620,7 +620,7 @@ async def async_local_filter_middleware(
             filter_id = params[0]
             #  Pass through to filters not created by middleware
             if filter_id not in filters:
-                return make_request(method, params)
+                return await make_request(method, params)
             _filter = filters[filter_id]
             if method == RPC.eth_getFilterChanges:
                 return {"result": await _filter.filter_changes.__anext__()}

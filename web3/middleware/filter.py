@@ -404,11 +404,15 @@ class AsyncRequestLogs:
         self._from_block = from_block
         self._to_block = to_block
 
+        self._filter_changes = None
         self._initialised = False
+
 
     @property
     def filter_changes(self):
-        return self._get_filter_changes()
+        if not self._initialised:
+            raise AttributeError("Please initialize before accessing this property")
+        return self._filter_changes
 
     @property
     def from_block(self) -> BlockNumber:
@@ -436,12 +440,10 @@ class AsyncRequestLogs:
             self._from_block = BlockNumber(hex_to_integer(from_block))  # type: ignore
         else:
             self._from_block = from_block
+        self._filter_changes = self._get_filter_changes()
         self._initialised = True
 
     async def _get_filter_changes(self) -> Iterator[List[LogReceipt]]:
-        if not self._initialised:
-            await self.initialize()
-
         async for start, stop in async_iter_latest_block_ranges(
             self.w3, self.from_block, await self.to_block
         ):

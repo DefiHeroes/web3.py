@@ -175,15 +175,72 @@ class Filter:
         return formatted_log_entries
 
 
+class AsyncFilter(Filter):
+    async def get_new_entries(self) -> List[LogReceipt]:
+        unfiltered_log_entries = await self.eth_module.get_filter_changes(self.filter_id)
+        log_entries = self._filter_valid_entries(unfiltered_log_entries)
+        return self._format_log_entries(log_entries)
+
+    async def get_all_entries(self) -> List[LogReceipt]:
+        unfiltered_log_entries = await self.eth_module.get_filter_logs(self.filter_id)
+        log_entries = self._filter_valid_entries(unfiltered_log_entries)
+        return self._format_log_entries(log_entries)
+
+
 class BlockFilter(Filter):
+    pass
+
+
+class AsyncBlockFilter(AsyncFilter):
     pass
 
 
 class TransactionFilter(Filter):
     pass
 
+class AsyncTransactionFilter(AsyncFilter):
+    pass
+
 
 class LogFilter(Filter):
+    data_filter_set = None
+    data_filter_set_regex = None
+    data_filter_set_function = None
+    log_entry_formatter = None
+    filter_params: FilterParams = None
+    builder: EventFilterBuilder = None
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.log_entry_formatter = kwargs.pop(
+            'log_entry_formatter',
+            self.log_entry_formatter,
+        )
+        if 'data_filter_set' in kwargs:
+            self.set_data_filters(kwargs.pop('data_filter_set'))
+        super().__init__(*args, **kwargs)
+
+    def format_entry(self, entry: LogReceipt) -> LogReceipt:
+        if self.log_entry_formatter:
+            return self.log_entry_formatter(entry)
+        return entry
+
+    def set_data_filters(self, data_filter_set: Collection[Tuple[TypeStr, Any]]) -> None:
+        """Sets the data filters (non indexed argument filters)
+
+        Expects a set of tuples with the type and value, e.g.:
+        (('uint256', [12345, 54321]), ('string', ('a-single-string',)))
+        """
+        self.data_filter_set = data_filter_set
+        if any(data_filter_set):
+            self.data_filter_set_function = match_fn(self.eth_module.codec, data_filter_set)
+
+    def is_valid_entry(self, entry: LogReceipt) -> bool:
+        if not self.data_filter_set:
+            return True
+        return bool(self.data_filter_set_function(entry['data']))
+
+
+class AsyncLogFilter(AsyncFilter):
     data_filter_set = None
     data_filter_set_regex = None
     data_filter_set_function = None

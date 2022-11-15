@@ -164,7 +164,8 @@ def find_matching_fn_abi(
 
 
 def encode_abi(
-    web3: "Web3", abi: ABIFunction, arguments: Sequence[Any], data: Optional[HexStr] = None
+    web3: "Web3", abi: ABIFunction, arguments: Sequence[Any], data: Optional[HexStr] = None,
+    normalize_arguments: bool = True,
 ) -> HexStr:
     argument_types = get_abi_input_types(abi)
 
@@ -176,17 +177,21 @@ def encode_abi(
             )
         )
 
-    normalizers = [
-        abi_ens_resolver(web3),
-        abi_address_to_hex,
-        abi_bytes_to_bytes,
-        abi_string_to_text,
-    ]
-    normalized_arguments = map_abi_data(
-        normalizers,
-        argument_types,
-        arguments,
-    )
+    if normalize_arguments:
+        normalizers = [
+            abi_ens_resolver(web3),
+            abi_address_to_hex,
+            abi_bytes_to_bytes,
+            abi_string_to_text,
+        ]
+        normalized_arguments = map_abi_data(
+            normalizers,
+            argument_types,
+            arguments,
+        )
+    else:
+        normalized_arguments = arguments
+
     encoded_arguments = web3.codec.encode_abi(
         argument_types,
         normalized_arguments,
@@ -207,6 +212,7 @@ def prepare_transaction(
     transaction: Optional[TxParams] = None,
     fn_args: Optional[Sequence[Any]] = None,
     fn_kwargs: Optional[Any] = None,
+    normalize_arguments: bool = True,
 ) -> TxParams:
     """
     :parameter `is_function_abi` is used to distinguish  function abi from contract abi
@@ -237,6 +243,7 @@ def prepare_transaction(
         fn_abi,
         fn_args,
         fn_kwargs,
+        normalize_arguments=normalize_arguments,
     )
     return prepared_transaction
 
@@ -247,7 +254,8 @@ def encode_transaction_data(
     contract_abi: Optional[ABI] = None,
     fn_abi: Optional[ABIFunction] = None,
     args: Optional[Sequence[Any]] = None,
-    kwargs: Optional[Any] = None
+    kwargs: Optional[Any] = None,
+    normalize_arguments: bool = True,
 ) -> HexStr:
     if fn_identifier is FallbackFn:
         fn_abi, fn_selector, fn_arguments = get_fallback_function_info(contract_abi, fn_abi)
@@ -261,7 +269,10 @@ def encode_transaction_data(
     else:
         raise TypeError("Unsupported function identifier")
 
-    return add_0x_prefix(encode_abi(web3, fn_abi, fn_arguments, fn_selector))
+    encoded = encode_abi(
+        web3, fn_abi, fn_arguments, fn_selector, normalize_arguments=normalize_arguments
+    )
+    return add_0x_prefix(encoded)
 
 
 def get_fallback_function_info(
